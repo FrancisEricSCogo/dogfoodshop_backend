@@ -2,53 +2,50 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Notification;
 use Illuminate\Http\Request;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Support\Facades\DB;
 
 class NotificationController extends Controller
 {
-    public function index(Request $request)
+    public function getNotifications(Request $request)
     {
+        $user = $request->get('auth_user');
+
         try {
-            $user = JWTAuth::parseToken()->authenticate();
+            $notifications = DB::table('notifications')
+                ->where('user_id', $user['id'])
+                ->orderBy('created_at', 'desc')
+                ->limit(50)
+                ->get();
+            
+            return response()->json(['success' => true, 'notifications' => $notifications]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Unauthorized'], 401);
+            return response()->json(['error' => 'Failed to fetch notifications: ' . $e->getMessage()], 500);
         }
-
-        $notifications = Notification::where('user_id', $user->id)
-            ->orderBy('created_at', 'desc')
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'notifications' => $notifications
-        ]);
     }
 
     public function markRead(Request $request)
     {
+        $user = $request->get('auth_user');
+        $data = $request->json()->all();
+        $notificationId = $data['notification_id'] ?? 0;
+
         try {
-            $user = JWTAuth::parseToken()->authenticate();
+            if ($notificationId > 0) {
+                DB::table('notifications')
+                    ->where('id', $notificationId)
+                    ->where('user_id', $user['id'])
+                    ->update(['read_at' => now()]);
+            } else {
+                DB::table('notifications')
+                    ->where('user_id', $user['id'])
+                    ->whereNull('read_at')
+                    ->update(['read_at' => now()]);
+            }
+            
+            return response()->json(['success' => true, 'message' => 'Notification marked as read']);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Unauthorized'], 401);
+            return response()->json(['error' => 'Failed to update notification: ' . $e->getMessage()], 500);
         }
-
-        $notification = Notification::where('id', $request->notification_id)
-            ->where('user_id', $user->id)
-            ->first();
-
-        if (!$notification) {
-            return response()->json(['error' => 'Notification not found'], 404);
-        }
-
-        $notification->read_at = now();
-        $notification->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Notification marked as read'
-        ]);
     }
 }
-
